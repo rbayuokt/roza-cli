@@ -229,8 +229,13 @@ const padBetween = (left: string, right: string, width: number): string => {
 const accent = (value: string): string => `\x1b[38;2;128;240;151m${value}\x1b[0m`;
 const nowAccent = (value: string): string => `\x1b[38;2;255;214;102m${value}\x1b[0m`;
 
+const LEFT_PAD = '  ';
 const renderLine = (text = ''): void => {
-  console.log(text);
+  if (!text) {
+    console.log('');
+    return;
+  }
+  console.log(`${LEFT_PAD}${text}`);
 };
 
 const renderDailySchedule = (data: PrayerData, location: LocationConfig): void => {
@@ -276,7 +281,6 @@ const renderDailySchedule = (data: PrayerData, location: LocationConfig): void =
   const totalWidth = colWidths.reduce((sum, width) => sum + width, 0) + gap.length * (colWidths.length - 1);
 
   renderLine();
-  renderLine();
   renderLine(accent('██████╗  █████╗ ███╗   ███╗ █████╗ ██████╗  █████╗ ███╗   ██╗'));
   renderLine(accent('██╔══██╗██╔══██╗████╗ ████║██╔══██╗██╔══██╗██╔══██╗████╗  ██║'));
   renderLine(accent('██████╔╝███████║██╔████╔██║███████║██║  ██║███████║██╔██╗ ██║'));
@@ -307,9 +311,9 @@ const renderDailySchedule = (data: PrayerData, location: LocationConfig): void =
   renderLine(pc.dim(separatorLine));
   renderLine(timeValues.join(gap));
   renderLine();
-  renderLine(`${pc.bold('Now:')} ${nowAccent(now.label)}`);
-  renderLine(`${accent('Current:')} ${currentLabel}`);
-  renderLine(`${accent('Upcoming:')} ${nextLabel}`);
+  renderLine(`${pc.dim('• Now:')} ${nowAccent(now.label)}`);
+  renderLine(`${pc.dim('• Current:')} ${accent(currentLabel)}`);
+  renderLine(`${pc.dim('• Upcoming:')} ${accent(nextLabel)}`);
 };
 
 const renderMonthlySchedule = (items: ReadonlyArray<PrayerData>): void => {
