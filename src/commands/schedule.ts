@@ -1,8 +1,10 @@
 import { cancel, isCancel, select, text } from '@clack/prompts';
 import type { Command } from 'commander';
+import { spawnSync } from 'node:child_process';
 import ora from 'ora';
 import pc from 'picocolors';
 
+import quotesJson from '../data/quran-quotes.json' with { type: 'json' };
 import {
   fetchCalendarByAddress,
   fetchCalendarByCity,
@@ -33,7 +35,21 @@ type PrayerStatus = {
   minutesAway?: number;
 };
 
+type QuranQuote = {
+  quranQuote: string;
+  reference: string;
+};
+
 const PRAYER_ORDER: PrayerName[] = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+const QUOTES = quotesJson as QuranQuote[];
+
+const pickQuote = (): QuranQuote | null => {
+  if (!Array.isArray(QUOTES) || QUOTES.length === 0) {
+    return null;
+  }
+  const idx = Math.floor(Math.random() * QUOTES.length);
+  return QUOTES[idx] ?? null;
+};
 
 const parseDateInput = (value: string): Date => {
   const match = /^\d{4}-\d{2}-\d{2}$/.test(value);
@@ -238,6 +254,55 @@ const renderLine = (text = ''): void => {
   console.log(`${LEFT_PAD}${text}`);
 };
 
+const shouldShowMenu = (): boolean => process.env.ROZA_INTERACTIVE === '1';
+
+const clearScreen = (): void => {
+  process.stdout.write('\u001b[2J\u001b[H\u001b[3J');
+};
+
+const runInteractiveMenu = async (): Promise<void> => {
+  if (!shouldShowMenu()) return;
+
+  while (true) {
+    const action = await select({
+      message: 'Choose your next action',
+      options: [
+        { value: 'schedule', label: 'Home' },
+        { value: 'mark', label: 'Log today’s prayers' },
+        { value: 'backfill', label: 'Backfill past date' },
+        { value: 'history-ramadan', label: 'View Ramadan history' },
+        { value: 'recap-ramadan', label: 'Ramadan statistics' },
+        { value: 'reset', label: 'Reset setup' },
+        { value: 'exit', label: 'Exit' },
+      ],
+    });
+
+    if (isCancel(action) || action === 'exit') {
+      return;
+    }
+
+    const argv =
+      action === 'history-ramadan'
+        ? [process.argv[1], 'history', '--ramadan']
+        : action === 'recap-ramadan'
+          ? [process.argv[1], 'recap', '--ramadan']
+          : [process.argv[1], String(action)];
+
+    clearScreen();
+
+    const childEnv = { ...process.env, ROZA_INTERACTIVE: '0' };
+    const child = spawnSync(process.execPath, argv, {
+      stdio: 'inherit',
+      env: childEnv,
+    });
+
+    if (child.error) {
+      console.error(pc.red('Failed to run command.'));
+      return;
+    }
+  }
+};
+
 const renderDailySchedule = (data: PrayerData, location: LocationConfig): void => {
   const config = getConfig();
   const timezoneOverride = config.timezone;
@@ -278,7 +343,8 @@ const renderDailySchedule = (data: PrayerData, location: LocationConfig): void =
 
   const colWidths = columns.map((col) => Math.max(col.label.length, col.time.length));
   const gap = '    ';
-  const totalWidth = colWidths.reduce((sum, width) => sum + width, 0) + gap.length * (colWidths.length - 1);
+  const totalWidth =
+    colWidths.reduce((sum, width) => sum + width, 0) + gap.length * (colWidths.length - 1);
 
   renderLine();
   renderLine(accent('██████╗  █████╗ ███╗   ███╗ █████╗ ██████╗  █████╗ ███╗   ██╗'));
@@ -314,6 +380,13 @@ const renderDailySchedule = (data: PrayerData, location: LocationConfig): void =
   renderLine(`${pc.dim('• Now:')} ${nowAccent(now.label)}`);
   renderLine(`${pc.dim('• Current:')} ${accent(currentLabel)}`);
   renderLine(`${pc.dim('• Upcoming:')} ${accent(nextLabel)}`);
+
+  const quote = pickQuote();
+  if (quote) {
+    renderLine();
+    renderLine(pc.dim(`“${quote.quranQuote}”`));
+    renderLine(pc.dim(`- ${quote.reference}`));
+  }
 };
 
 const renderMonthlySchedule = (items: ReadonlyArray<PrayerData>): void => {
@@ -517,6 +590,8 @@ export const registerScheduleCommand = (program: Command): void => {
             school,
           });
         }
+
+        await runInteractiveMenu();
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
         console.error(pc.red(message));

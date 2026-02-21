@@ -10,6 +10,7 @@
     "ramzan": "./dist/cli.js",
     "ramazan": "./dist/cli.js",
     "ramadan": "./dist/cli.js",
+    "roza-cli": "./dist/cli.js",
     "roza": "./dist/cli.js"
   },
   "main": "./dist/index.js",
@@ -21,7 +22,7 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "start": "node dist/cli.js",
-    "dev:schedule": "npm run build && clear && node dist/cli.js schedule",
+    "dev:schedule": "npm run build && clear && ROZA_INTERACTIVE=1 node dist/cli.js schedule",
     "dev:mark": "npm run build && clear && node dist/cli.js mark",
     "dev:history": "npm run build && clear && node dist/cli.js history",
     "dev:ramadan": "npm run build && clear && node dist/cli.js history --ramadan --ramadan-year 1447 --ramadan-days 30",
@@ -49,11 +50,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourname/puasa-cli"
+    "url": "https://github.com/rbayuokt/roza-cli"
   },
-  "homepage": "https://github.com/yourname/puasa-cli#readme",
+  "homepage": "https://github.com/rbayuokt/roza-cli#readme",
   "bugs": {
-    "url": "https://github.com/yourname/puasa-cli/issues"
+    "url": "https://github.com/rbayuokt/roza-cli/issues"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

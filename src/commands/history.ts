@@ -357,9 +357,13 @@ export const registerHistoryCommand = (program: Command): void => {
         renderLine();
 
         const headers = ['Date', ...PRAYERS];
+        const formattedRows = rows.map((row) => ({
+          ...row,
+          displayDate: formatGregorianLabel(row.date),
+        }));
         const colWidths = headers.map((header, idx) => {
           if (idx === 0) {
-            return Math.max(header.length, ...rows.map((row) => row.date.length));
+            return Math.max(header.length, ...formattedRows.map((row) => row.displayDate.length));
           }
           return Math.max(header.length, 3);
         });
@@ -378,9 +382,9 @@ export const registerHistoryCommand = (program: Command): void => {
         renderLine(line);
         renderLine(pc.dim('─'.repeat(stripAnsi(line).length)));
 
-        for (const row of rows) {
+        for (const row of formattedRows) {
           const values = [
-            row.date,
+            row.displayDate,
             ...PRAYERS.map((prayer) => (row.prayers[prayer] ? accent('✓') : pc.dim('·'))),
           ];
           const formatted = values
