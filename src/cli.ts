@@ -26,6 +26,10 @@ registerResetCommand(program);
 
 const argv = process.argv.slice(2);
 const wantsHelp = argv.includes('-h') || argv.includes('--help');
+if (!wantsHelp && argv.length === 0) {
+  process.env.ROZA_INTERACTIVE = '1';
+  process.argv.push('schedule');
+}
 if (!wantsHelp) {
   program.hook('preAction', async (_thisCommand, actionCommand) => {
     if (actionCommand?.name() === 'reset') {

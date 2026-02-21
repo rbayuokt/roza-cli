@@ -81,6 +81,11 @@ export interface NextPrayerData {
   readonly nextPrayerTime: string;
 }
 
+export interface HijriConversionData {
+  readonly hijri: HijriDate;
+  readonly gregorian: GregorianDate;
+}
+
 export interface CalculationMethod {
   readonly id: number;
   readonly name: string;
@@ -176,6 +181,11 @@ const NextPrayerDataSchema = z.object({
   meta: PrayerMetaSchema,
   nextPrayer: z.string(),
   nextPrayerTime: z.string(),
+});
+
+const HijriConversionSchema = z.object({
+  hijri: HijriDateSchema,
+  gregorian: GregorianDateSchema,
 });
 
 const CalculationMethodSchema = z.object({
@@ -499,3 +509,18 @@ export const fetchMethods = async (): Promise<MethodsResponse> => {
 
 export const fetchQibla = async (latitude: number, longitude: number): Promise<QiblaData> =>
   fetchAndParse(`${API_BASE}/qibla/${latitude}/${longitude}`, QiblaDataSchema);
+
+export const fetchHijriByDate = async (dateKey: string): Promise<HijriConversionData> => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+  if (!match) {
+    throw new Error('Date must be in YYYY-MM-DD format');
+  }
+
+  const [, year, month, day] = match;
+  const formatted = `${day}-${month}-${year}`;
+
+  return fetchAndParse(
+    `${API_BASE}/gToH?date=${formatted}`,
+    HijriConversionSchema,
+  );
+};
