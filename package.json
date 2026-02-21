@@ -46,7 +46,7 @@
     "cli",
     "puasa"
   ],
-  "author": "",
+  "author": "rbayuokt",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -79,4 +79,9 @@
     "node": ">=20"
   },
   "packageManager": "npm@10.9.2"
+  ,
+  "publishConfig": {
+    "access": "public"
+  },
+  "prepublishOnly": "npm run build"
 }
