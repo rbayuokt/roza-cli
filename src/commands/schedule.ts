@@ -18,6 +18,9 @@ import {
   type PrayerTimings,
 } from '../lib/api.js';
 import { getConfig, setConfig, type LocationConfig } from '../lib/store.js';
+import { padAnsi, stripAnsi } from '../utils/cli-format.js';
+import { extractTime, parseTimeToMinutes } from '../utils/time-utils.js';
+import { parseHijriYear } from '../utils/ramadan-utils.js';
 
 type ScheduleOptions = {
   city?: string;
@@ -97,14 +100,6 @@ const parseOptionalNumber = (value?: string): number | undefined => {
   return parsed;
 };
 
-const parseHijriYear = (value: string): number => {
-  const year = Number(value);
-  if (!Number.isInteger(year) || year < 1) {
-    throw new Error('Hijri year must be a positive integer');
-  }
-  return year;
-};
-
 const getTodayDateKey = (): string => {
   const now = new Date();
   const year = now.getFullYear();
@@ -120,23 +115,6 @@ const toDateKeyFromGregorian = (dateValue: string): string => {
   }
   const [, day, month, year] = match;
   return `${year}-${month}-${day}`;
-};
-
-const extractTime = (value: string): string => value.split(' ')[0] ?? value;
-
-const parseTimeToMinutes = (value: string): number | null => {
-  const match = /^(\d{1,2}):(\d{2})/.exec(extractTime(value));
-  if (!match) {
-    return null;
-  }
-
-  const hour = Number(match[1]);
-  const minute = Number(match[2]);
-  if (Number.isNaN(hour) || Number.isNaN(minute)) {
-    return null;
-  }
-
-  return hour * 60 + minute;
 };
 
 const getNowInTimezone = (timezone?: string): { label: string; minutes: number } => {
@@ -253,9 +231,6 @@ const formatLocationLabel = (location: LocationConfig): string => {
   return `${location.city}, ${location.country}`;
 };
 
-const ANSI_REGEX = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g');
-const stripAnsi = (value: string): string => value.replace(ANSI_REGEX, '');
-
 const centerAnsi = (value: string, width: number): string => {
   const visible = stripAnsi(value).length;
   if (visible >= width) {
@@ -264,14 +239,6 @@ const centerAnsi = (value: string, width: number): string => {
   const left = Math.floor((width - visible) / 2);
   const right = width - visible - left;
   return `${' '.repeat(left)}${value}${' '.repeat(right)}`;
-};
-
-const padAnsi = (value: string, width: number): string => {
-  const visible = stripAnsi(value).length;
-  if (visible >= width) {
-    return value;
-  }
-  return value + ' '.repeat(width - visible);
 };
 
 const padBetween = (left: string, right: string, width: number): string => {

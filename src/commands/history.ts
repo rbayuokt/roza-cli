@@ -3,19 +3,26 @@ import pc from 'picocolors';
 
 import {
   fetchHijriByDate,
-  fetchHijriCalendarByAddress,
-  fetchHijriCalendarByCity,
   type HijriDate,
   type PrayerData,
 } from '../lib/api.js';
+import {
+  addDays,
+  formatDateLabel,
+  parseDateKey,
+  parseDays,
+  parseHijriYear,
+  resolveRamadanCalendar,
+  toDateKeyFromGregorian,
+} from '../utils/ramadan-utils.js';
 import {
   PRAYERS,
   getConfig,
   listAttendance,
   type DayAttendance,
-  type LocationConfig,
   type PrayerRecord,
 } from '../lib/store.js';
+import { padAnsi, stripAnsi } from '../utils/cli-format.js';
 
 type HistoryOptions = {
   from?: string;
@@ -44,9 +51,6 @@ const renderLine = (text = ''): void => {
 
 const accent = (value: string): string => `\x1b[38;2;128;240;151m${value}\x1b[0m`;
 
-const stripAnsi = (value: string): string =>
-  value.replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g'), '');
-
 const HISTORY_ART = [
   '██╗  ██╗██╗███████╗████████╗ ██████╗ ██████╗██╗   ██╗',
   '██║  ██║██║██╔════╝╚══██╔══╝██╔═══██╗██╔══██╚██╗ ██╔╝',
@@ -62,71 +66,11 @@ const renderHistoryHeader = (): void => {
   renderLine();
 };
 
-const padAnsi = (value: string, width: number): string => {
-  const visible = stripAnsi(value).length;
-  if (visible >= width) {
-    return value;
-  }
-  return value + ' '.repeat(width - visible);
-};
-
-const parseDateKey = (value: string): string => {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    throw new Error('Date must be in YYYY-MM-DD format');
-  }
-  return value;
-};
-
 const parseMonthKey = (value: string): string => {
   if (!/^\d{4}-\d{2}$/.test(value)) {
     throw new Error('Month must be in YYYY-MM format');
   }
   return value;
-};
-
-const parseDays = (value: string): number => {
-  const days = Number(value);
-  if (!Number.isInteger(days) || days < 1 || days > 30) {
-    throw new Error('Ramadan days must be an integer between 1 and 30');
-  }
-  return days;
-};
-
-const parseHijriYear = (value: string): number => {
-  const year = Number(value);
-  if (!Number.isInteger(year) || year < 1) {
-    throw new Error('Hijri year must be a positive integer');
-  }
-  return year;
-};
-
-const addDays = (dateKey: string, days: number): string => {
-  const [year, month, day] = dateKey.split('-').map((part) => Number(part));
-  const date = new Date(year, month - 1, day);
-  date.setDate(date.getDate() + days);
-  const nextYear = date.getFullYear();
-  const nextMonth = String(date.getMonth() + 1).padStart(2, '0');
-  const nextDay = String(date.getDate()).padStart(2, '0');
-  return `${nextYear}-${nextMonth}-${nextDay}`;
-};
-
-const toDateKeyFromGregorian = (dateValue: string): string => {
-  const match = /^(\d{2})-(\d{2})-(\d{4})$/.exec(dateValue);
-  if (!match) {
-    throw new Error('Unexpected Gregorian date format');
-  }
-  const [, day, month, year] = match;
-  return `${year}-${month}-${day}`;
-};
-
-const formatGregorianLabel = (dateKey: string): string => {
-  const [year, month, day] = dateKey.split('-').map((part) => Number(part));
-  const date = new Date(year, month - 1, day);
-  return new Intl.DateTimeFormat('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  }).format(date);
 };
 
 const filterByRange = (items: ReadonlyArray<DayAttendance>, from?: string, to?: string) => {
@@ -155,7 +99,7 @@ const buildRamadanDatesFromCalendar = (items: ReadonlyArray<PrayerData>): Readon
     const dateKey = toDateKeyFromGregorian(item.date.gregorian.date);
     return {
       dateKey,
-      gregorianLabel: formatGregorianLabel(dateKey),
+      gregorianLabel: formatDateLabel(dateKey),
       hijriLabel: formatHijriLabel(item.date.hijri),
     };
   });
@@ -178,35 +122,9 @@ const buildRamadanDatesFromStart = async (
 
   return conversions.map(({ dateKey, hijri }) => ({
     dateKey,
-    gregorianLabel: formatGregorianLabel(dateKey),
+    gregorianLabel: formatDateLabel(dateKey),
     hijriLabel: formatHijriLabel(hijri),
   }));
-};
-
-const resolveRamadanCalendar = async (
-  location: LocationConfig,
-  year: number,
-  method?: number,
-  school?: number,
-): Promise<ReadonlyArray<PrayerData>> => {
-  if (location.type === 'city') {
-    return fetchHijriCalendarByCity({
-      city: location.city,
-      country: location.country,
-      year,
-      month: 9,
-      method,
-      school,
-    });
-  }
-
-  return fetchHijriCalendarByAddress({
-    address: location.address,
-    year,
-    month: 9,
-    method,
-    school,
-  });
 };
 
 const getPrayerMap = (rows: ReadonlyArray<DayAttendance>): Map<string, PrayerRecord> => {
@@ -362,7 +280,7 @@ export const registerHistoryCommand = (program: Command): void => {
         const headers = ['Date', ...PRAYERS];
         const formattedRows = rows.map((row) => ({
           ...row,
-          displayDate: formatGregorianLabel(row.date),
+          displayDate: formatDateLabel(row.date),
         }));
         const colWidths = headers.map((header, idx) => {
           if (idx === 0) {

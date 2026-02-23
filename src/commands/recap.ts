@@ -2,17 +2,31 @@ import type { Command } from 'commander';
 import pc from 'picocolors';
 
 import {
-  fetchHijriCalendarByAddress,
-  fetchHijriCalendarByCity,
+  fetchTimingsByAddress,
+  fetchTimingsByCity,
   type PrayerData,
+  type PrayerTimings,
 } from '../lib/api.js';
 import { calcSummary } from '../lib/recap.js';
+import {
+  addDays,
+  formatDateLabel,
+  parseDateKey,
+  parseDays,
+  parseHijriYear,
+  resolveRamadanCalendar,
+  toDateKeyFromGregorian,
+} from '../utils/ramadan-utils.js';
 import {
   PRAYERS,
   getConfig,
   listAttendance,
   type DayAttendance,
+  type LocationConfig,
 } from '../lib/store.js';
+import { stripAnsi } from '../utils/cli-format.js';
+import { formatDateKey } from '../utils/date-utils.js';
+import { parseTimeToMinutes } from '../utils/time-utils.js';
 
 type RecapOptions = {
   range?: string;
@@ -42,9 +56,6 @@ const renderLine = (text = ''): void => {
 
 const accent = (value: string): string => `\x1b[38;2;128;240;151m${value}\x1b[0m`;
 
-const stripAnsi = (value: string): string =>
-  value.replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g'), '');
-
 const parseRange = (value?: string): number => {
   if (!value) return 30;
   if (/^\d+d$/.test(value)) {
@@ -53,65 +64,7 @@ const parseRange = (value?: string): number => {
   return 30;
 };
 
-const parseDateKey = (value: string): string => {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    throw new Error('Date must be in YYYY-MM-DD format');
-  }
-  return value;
-};
-
-const parseDays = (value: string): number => {
-  const days = Number(value);
-  if (!Number.isInteger(days) || days < 1 || days > 30) {
-    throw new Error('Ramadan days must be an integer between 1 and 30');
-  }
-  return days;
-};
-
-const parseHijriYear = (value: string): number => {
-  const year = Number(value);
-  if (!Number.isInteger(year) || year < 1) {
-    throw new Error('Hijri year must be a positive integer');
-  }
-  return year;
-};
-
-const getTodayDateKey = (): string => {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-const addDays = (dateKey: string, days: number): string => {
-  const [year, month, day] = dateKey.split('-').map((part) => Number(part));
-  const date = new Date(year, month - 1, day);
-  date.setDate(date.getDate() + days);
-  const nextYear = date.getFullYear();
-  const nextMonth = String(date.getMonth() + 1).padStart(2, '0');
-  const nextDay = String(date.getDate()).padStart(2, '0');
-  return `${nextYear}-${nextMonth}-${nextDay}`;
-};
-
-const toDateKeyFromGregorian = (dateValue: string): string => {
-  const match = /^(\d{2})-(\d{2})-(\d{4})$/.exec(dateValue);
-  if (!match) {
-    throw new Error('Unexpected Gregorian date format');
-  }
-  const [, day, month, year] = match;
-  return `${year}-${month}-${day}`;
-};
-
-const formatDateLabel = (dateKey: string): string => {
-  const [year, month, day] = dateKey.split('-').map((part) => Number(part));
-  const date = new Date(year, month - 1, day);
-  return new Intl.DateTimeFormat('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  }).format(date);
-};
+const getTodayDateKey = (timezone?: string): string => formatDateKey(new Date(), timezone);
 
 const filterByDays = (
   rows: ReadonlyArray<DayAttendance>,
@@ -148,6 +101,93 @@ const expandAttendance = (rows: ReadonlyArray<DayAttendance>): ReadonlyArray<Day
   return expanded;
 };
 
+const getNowMinutes = (timezone?: string): number => {
+  const date = new Date();
+  if (timezone) {
+    try {
+      const formatter = new Intl.DateTimeFormat('en-GB', {
+        timeZone: timezone,
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      });
+
+      const parts = formatter.formatToParts(date);
+      const hourPart = parts.find((part) => part.type === 'hour')?.value;
+      const minutePart = parts.find((part) => part.type === 'minute')?.value;
+
+      if (hourPart && minutePart) {
+        const hour = Number(hourPart);
+        const minute = Number(minutePart);
+        return hour * 60 + minute;
+      }
+    } catch {
+      // fallback to local time below
+    }
+  }
+
+  const hour = date.getHours();
+  const minute = date.getMinutes();
+  return hour * 60 + minute;
+};
+
+const resolveTodayTimings = async (
+  location: LocationConfig,
+  dateKey: string,
+  method?: number,
+  school?: number,
+): Promise<{ timings: PrayerTimings; timezone: string } | null> => {
+  const [year, month, day] = dateKey.split('-').map((part) => Number(part));
+  const date = new Date(year, month - 1, day);
+  try {
+    const data =
+      location.type === 'city'
+        ? await fetchTimingsByCity({
+            city: location.city,
+            country: location.country,
+            method,
+            school,
+            date,
+          })
+        : await fetchTimingsByAddress({
+            address: location.address,
+            method,
+            school,
+            date,
+          });
+    return { timings: data.timings, timezone: data.meta.timezone };
+  } catch {
+    return null;
+  }
+};
+
+const resolveWinRateCutoffDateKey = async (config: ReturnType<typeof getConfig>): Promise<string> => {
+  const todayKey = getTodayDateKey(config.timezone);
+  const yesterdayKey = addDays(todayKey, -1);
+
+  if (!config.location) {
+    return yesterdayKey;
+  }
+
+  const timing = await resolveTodayTimings(
+    config.location,
+    todayKey,
+    config.method,
+    config.school,
+  );
+  if (!timing) {
+    return yesterdayKey;
+  }
+
+  const nowMinutes = getNowMinutes(config.timezone ?? timing.timezone);
+  const ishaMinutes = parseTimeToMinutes(timing.timings.Isha);
+  if (ishaMinutes === null) {
+    return yesterdayKey;
+  }
+
+  return nowMinutes >= ishaMinutes ? todayKey : yesterdayKey;
+};
+
 const buildPrayerGrid = (rows: ReadonlyArray<DayAttendance>): PrayerGrid => {
   const expanded = expandAttendance(rows);
   if (expanded.length === 0) return { label: '', rows: [] };
@@ -166,25 +206,16 @@ const buildPrayerGrid = (rows: ReadonlyArray<DayAttendance>): PrayerGrid => {
   return { label, rows: rowsOut };
 };
 
-const calcWinRateUntilYesterday = (
+const filterRowsUntil = (
   rows: ReadonlyArray<DayAttendance>,
-): { percent: number; perfectDays: number } => {
-  const todayKey = getTodayDateKey();
-  const scoped = rows.filter((row) => row.date < todayKey);
-  const totalDays = scoped.length;
-  const perfectDays = scoped.reduce((sum, row) => {
-    const isPerfect = PRAYERS.every((prayer) => row.prayers[prayer]);
-    return sum + (isPerfect ? 1 : 0);
-  }, 0);
-  const percent = totalDays > 0 ? Math.round((perfectDays / totalDays) * 100) : 0;
-  return { percent, perfectDays };
-};
+  cutoffDateKey: string,
+): ReadonlyArray<DayAttendance> => rows.filter((row) => row.date <= cutoffDateKey);
 
-const calcPrayerRateUntilYesterday = (
+const calcPrayerRate = (
   rows: ReadonlyArray<DayAttendance>,
+  cutoffDateKey: string,
 ): { percent: number; completed: number; total: number } => {
-  const todayKey = getTodayDateKey();
-  const scoped = rows.filter((row) => row.date < todayKey);
+  const scoped = filterRowsUntil(rows, cutoffDateKey);
   const completed = scoped.reduce((sum, row) => {
     const isPerfect = PRAYERS.every((prayer) => row.prayers[prayer]);
     return sum + (isPerfect ? 1 : 0);
@@ -194,41 +225,15 @@ const calcPrayerRateUntilYesterday = (
   return { percent, completed, total };
 };
 
-const calcFastingRateUntilYesterday = (
+const calcFastingRate = (
   rows: ReadonlyArray<DayAttendance>,
+  cutoffDateKey: string,
 ): { percent: number; completed: number; total: number } => {
-  const todayKey = getTodayDateKey();
-  const scoped = rows.filter((row) => row.date < todayKey);
+  const scoped = filterRowsUntil(rows, cutoffDateKey);
   const completed = scoped.reduce((sum, row) => sum + (row.fasted ? 1 : 0), 0);
   const total = scoped.length;
   const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
   return { percent, completed, total };
-};
-
-const resolveRamadanCalendar = async (
-  location: NonNullable<ReturnType<typeof getConfig>['location']>,
-  year: number,
-  method?: number,
-  school?: number,
-): Promise<ReadonlyArray<PrayerData>> => {
-  if (location.type === 'city') {
-    return fetchHijriCalendarByCity({
-      city: location.city,
-      country: location.country,
-      year,
-      month: 9,
-      method,
-      school,
-    });
-  }
-
-  return fetchHijriCalendarByAddress({
-    address: location.address,
-    year,
-    month: 9,
-    method,
-    school,
-  });
 };
 
 const buildRamadanDatesFromCalendar = (
@@ -276,6 +281,7 @@ export const registerRecapCommand = (program: Command): void => {
           process.exitCode = 1;
           return;
         }
+        const winRateCutoff = await resolveWinRateCutoffDateKey(config);
 
         const ramadanYear = options.ramadanYear ? parseHijriYear(options.ramadanYear) : 1447;
         const ramadanDays = options.ramadanDays ? parseDays(options.ramadanDays) : 30;
@@ -325,12 +331,12 @@ export const registerRecapCommand = (program: Command): void => {
         );
         const fastedCount = rows.reduce((sum, row) => sum + (row.fasted ? 1 : 0), 0);
         renderLine(`${pc.dim('• Fasting days:')} ${fastedCount}/${rows.length}`);
-        const prayerRate = calcPrayerRateUntilYesterday(rows);
+        const prayerRate = calcPrayerRate(rows, winRateCutoff);
         const prayerCrown = prayerRate.percent === 100 ? ' 👑' : '';
         renderLine(
           `${pc.dim('• Prayer win rate:')} ${accent(`${prayerRate.percent}%`)}${prayerCrown} ${pc.dim(`(${prayerRate.completed}/${prayerRate.total} perfect days)`)}`,
         );
-        const fastingRate = calcFastingRateUntilYesterday(rows);
+        const fastingRate = calcFastingRate(rows, winRateCutoff);
         const fastingCrown = fastingRate.percent === 100 ? ' 👑' : '';
         renderLine(
           `${pc.dim('• Fasting win rate:')} ${accent(`${fastingRate.percent}%`)}${fastingCrown} ${pc.dim(`(${fastingRate.completed}/${fastingRate.total} days)`)}`,
@@ -356,6 +362,7 @@ export const registerRecapCommand = (program: Command): void => {
 
       const summary = calcSummary(rows);
       const chart = buildPrayerGrid(rows);
+      const winRateCutoff = await resolveWinRateCutoffDateKey(getConfig());
 
       renderRecapHeader();
       renderLine(`${pc.dim('• Consistency snapshot')}`);
@@ -366,9 +373,10 @@ export const registerRecapCommand = (program: Command): void => {
       renderLine(
         `${pc.dim('• Prayer perfect days:')} ${summary.perfectDays}/${summary.totalDays} ${pc.dim('(all 5 prayers)')}`,
       );
-      const winRate = calcWinRateUntilYesterday(rows);
+      const winRate = calcPrayerRate(rows, winRateCutoff);
+      const winRateCrown = winRate.percent === 100 ? ' 👑' : '';
       renderLine(
-        `${pc.dim('• Win rate:')} ${accent(`${winRate.percent}%`)} ${pc.dim(`(${winRate.perfectDays} perfect days)`)}`,
+        `${pc.dim('• Prayer win rate:')} ${accent(`${winRate.percent}%`)}${winRateCrown} ${pc.dim(`(${winRate.completed}/${winRate.total} perfect days)`)}`,
       );
       renderLine();
 
