@@ -2,8 +2,8 @@ import { cancel, confirm, intro, isCancel, multiselect, outro, text } from '@cla
 import type { Command } from 'commander';
 import pc from 'picocolors';
 
-import { fetchHijriByDate } from '../lib/api.js';
 import { getAttendance, PRAYERS, setAttendance, type PrayerName } from '../lib/store.js';
+import { isRamadanDate } from '../utils/ramadan-utils.js';
 
 type BackfillOptions = {
   date?: string;
@@ -38,14 +38,6 @@ const isFutureDate = (dateKey: string): boolean => {
   return dateKey > todayKey;
 };
 
-const isRamadanDate = async (dateKey: string): Promise<boolean> => {
-  try {
-    const converted = await fetchHijriByDate(dateKey);
-    return converted.hijri.month.number === 9;
-  } catch {
-    return false;
-  }
-};
 
 export const registerBackfillCommand = (program: Command): void => {
   program

@@ -5,12 +5,11 @@ import path from 'node:path';
 import pc from 'picocolors';
 
 import { exportStore, importStore } from '../lib/store.js';
+import { DEFAULT_EXPORT_FILE } from '../utils/export-utils.js';
 
 type ImportOptions = {
   file?: string;
 };
-
-const DEFAULT_EXPORT_FILE = 'roza-export.json';
 
 export const registerImportCommand = (program: Command): void => {
   program

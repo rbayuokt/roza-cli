@@ -5,13 +5,12 @@ import path from 'node:path';
 import pc from 'picocolors';
 
 import { exportStore } from '../lib/store.js';
+import { DEFAULT_EXPORT_FILE } from '../utils/export-utils.js';
 
 type ExportOptions = {
   file?: string;
   force?: boolean;
 };
-
-const DEFAULT_EXPORT_FILE = 'roza-export.json';
 
 const fileExists = async (filePath: string): Promise<boolean> => {
   try {
