@@ -28,7 +28,7 @@
     "dev:ramadan": "npm run build && clear && node dist/cli.js history --ramadan --ramadan-year 1447 --ramadan-days 30",
     "dev:backfill": "npm run build && clear && node dist/cli.js backfill",
     "dev:recap": "npm run build && clear && node dist/cli.js recap",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "lint": "eslint .",
     "format": "prettier -w .",
