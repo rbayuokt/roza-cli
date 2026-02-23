@@ -2,8 +2,11 @@
 import { Command } from 'commander';
 import pc from 'picocolors';
 
+import { registerAboutCommand } from './commands/about.js';
 import { registerBackfillCommand } from './commands/backfill.js';
+import { registerExportCommand } from './commands/export.js';
 import { registerHistoryCommand } from './commands/history.js';
+import { registerImportCommand } from './commands/import.js';
 import { registerMarkCommand } from './commands/mark.js';
 import { registerRecapCommand } from './commands/recap.js';
 import { registerResetCommand } from './commands/reset.js';
@@ -23,6 +26,9 @@ registerBackfillCommand(program);
 registerHistoryCommand(program);
 registerRecapCommand(program);
 registerResetCommand(program);
+registerExportCommand(program);
+registerImportCommand(program);
+registerAboutCommand(program);
 
 const argv = process.argv.slice(2);
 const wantsHelp = argv.includes('-h') || argv.includes('--help');
@@ -32,7 +38,7 @@ if (!wantsHelp && argv.length === 0) {
 }
 if (!wantsHelp) {
   program.hook('preAction', async (_thisCommand, actionCommand) => {
-    if (actionCommand?.name() === 'reset') {
+    if (['reset', 'export', 'import', 'about'].includes(actionCommand?.name() ?? '')) {
       return;
     }
 

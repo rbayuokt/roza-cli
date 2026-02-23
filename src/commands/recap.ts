@@ -32,11 +32,6 @@ type PrayerGrid = {
   rows: string[];
 };
 
-const formatAveragePerDay = (value: number): string => {
-  const percent = PRAYERS.length > 0 ? Number(((value / PRAYERS.length) * 100).toFixed(1)) : 0;
-  return `${value} (${percent}%)`;
-};
-
 const LEFT_PAD = '  ';
 const renderLine = (text = ''): void => {
   if (!text) {
@@ -111,7 +106,10 @@ const formatDateLabel = (dateKey: string): string => {
   }).format(date);
 };
 
-const filterByDays = (rows: ReadonlyArray<DayAttendance>, days: number): ReadonlyArray<DayAttendance> => {
+const filterByDays = (
+  rows: ReadonlyArray<DayAttendance>,
+  days: number,
+): ReadonlyArray<DayAttendance> => {
   if (rows.length === 0) return rows;
   const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date));
   const end = sorted[sorted.length - 1].date;
@@ -148,7 +146,7 @@ const buildPrayerGrid = (rows: ReadonlyArray<DayAttendance>): PrayerGrid => {
   if (expanded.length === 0) return { label: '', rows: [] };
 
   const label = `${formatDateLabel(expanded[0].date)} → ${formatDateLabel(expanded[expanded.length - 1].date)}`;
-  const gap = '  ';
+  const gap = ' ';
   const filled = accent('■');
   const empty = pc.dim('□');
   const labelWidth = Math.max(...PRAYERS.map((prayer) => prayer.length));
@@ -187,7 +185,9 @@ const resolveRamadanCalendar = async (
   });
 };
 
-const buildRamadanDatesFromCalendar = (items: ReadonlyArray<PrayerData>): ReadonlyArray<RamadanDate> =>
+const buildRamadanDatesFromCalendar = (
+  items: ReadonlyArray<PrayerData>,
+): ReadonlyArray<RamadanDate> =>
   items.map((item) => ({
     dateKey: toDateKeyFromGregorian(item.date.gregorian.date),
   }));
@@ -204,12 +204,12 @@ const buildPrayerMap = (rows: ReadonlyArray<DayAttendance>): Map<string, PrayerR
 };
 
 const RECAP_ART = [
-  '██████╗ ███████╗ ██████╗  █████╗ ██████╗ ',
-  '██╔══██╗██╔════╝██╔════╝ ██╔══██╗██╔══██╗',
-  '██████╔╝█████╗  ██║      ███████║██████╔╝',
-  '██╔══██╗██╔══╝  ██║      ██╔══██║██╔═══╝ ',
-  '██║  ██║███████╗╚██████╗ ██║  ██║██║     ',
-  '╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═╝     ',
+  '██████╗ ███████╗ ██████╗ █████╗ ██████╗ ',
+  '██╔══██╗██╔════╝██╔════╝██╔══██╗██╔══██╗',
+  '██████╔╝█████╗  ██║     ███████║██████╔╝',
+  '██╔══██╗██╔══╝  ██║     ██╔══██║██╔═══╝ ',
+  '██║  ██║███████╗╚██████╗██║  ██║██║     ',
+  '╚═╝  ╚═╝╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝     ',
 ];
 
 const renderRecapHeader = (): void => {
@@ -228,7 +228,8 @@ export const registerRecapCommand = (program: Command): void => {
     .option('--ramadan-days <days>', 'Ramadan length in days (29 or 30)')
     .option('--ramadan-year <year>', 'Hijri year for Ramadan (e.g. 1447)')
     .action(async (options: RecapOptions) => {
-      const useRamadan = Boolean(options.ramadan || options.ramadanStart || options.ramadanDays) || !options.range;
+      const useRamadan =
+        Boolean(options.ramadan || options.ramadanStart || options.ramadanDays) || !options.range;
 
       if (useRamadan) {
         const config = getConfig();
@@ -245,7 +246,12 @@ export const registerRecapCommand = (program: Command): void => {
         const ramadanDates = ramadanStart
           ? buildRamadanDatesFromStart(ramadanStart, ramadanDays)
           : buildRamadanDatesFromCalendar(
-              await resolveRamadanCalendar(config.location, ramadanYear, config.method, config.school),
+              await resolveRamadanCalendar(
+                config.location,
+                ramadanYear,
+                config.method,
+                config.school,
+              ),
             );
 
         const attendance = listAttendance();
@@ -267,11 +273,23 @@ export const registerRecapCommand = (program: Command): void => {
 
         renderRecapHeader();
         renderLine(`${pc.dim('• Ramadan consistency')}`);
-        renderLine(`${pc.dim('• Period:')} 1 Ramadan ${ramadanYear} → ${rows.length} Ramadan ${ramadanYear}`);
-        renderLine(`${pc.dim('• Prayers completed:')} ${summary.completed}/${summary.total} (${summary.percent}%)`);
-        renderLine(`${pc.dim('• Active days:')} ${summary.activeDays}/${summary.totalDays} ${pc.dim('(≥1 prayer)')}`);
-        renderLine(`${pc.dim('• Perfect days:')} ${summary.perfectDays}/${summary.totalDays} ${pc.dim('(5/5)')}`);
-        renderLine(`${pc.dim('• Avg prayers/day:')} ${formatAveragePerDay(summary.averagePerDay)}`);
+        renderLine(
+          `${pc.dim('• Period:')} 1 Ramadan ${ramadanYear} → ${rows.length} Ramadan ${ramadanYear}`,
+        );
+        renderLine(
+          `${pc.dim('• Prayers completed:')} ${summary.completed}/${summary.total} (${summary.percent}%)`,
+        );
+        renderLine(
+          `${pc.dim('• Active days:')} ${summary.activeDays}/${summary.totalDays} ${pc.dim('(≥1 prayer)')}`,
+        );
+        renderLine(
+          `${pc.dim('• Perfect days:')} ${summary.perfectDays}/${summary.totalDays} ${pc.dim('(5/5)')}`,
+        );
+        const perfectPercent =
+          summary.totalDays > 0 ? Math.round((summary.perfectDays / summary.totalDays) * 100) : 0;
+        renderLine(
+          `${pc.dim('• Win rate:')} ${accent(`${perfectPercent}%`)} ${pc.dim(`(${summary.perfectDays} perfect days)`)}`,
+        );
         renderLine();
 
         renderLine(accent(chart.label));
@@ -297,10 +315,20 @@ export const registerRecapCommand = (program: Command): void => {
       renderRecapHeader();
       renderLine(`${pc.dim('• Consistency snapshot')}`);
       renderLine(`${pc.dim('• Period:')} last ${rangeDays} days`);
-      renderLine(`${pc.dim('• Prayers completed:')} ${summary.completed}/${summary.total} (${summary.percent}%)`);
-      renderLine(`${pc.dim('• Active days:')} ${summary.activeDays}/${summary.totalDays} ${pc.dim('(≥1 prayer)')}`);
-      renderLine(`${pc.dim('• Perfect days:')} ${summary.perfectDays}/${summary.totalDays} ${pc.dim('(5/5)')}`);
-      renderLine(`${pc.dim('• Avg prayers/day:')} ${formatAveragePerDay(summary.averagePerDay)}`);
+      renderLine(
+        `${pc.dim('• Prayers completed:')} ${summary.completed}/${summary.total} (${summary.percent}%)`,
+      );
+      renderLine(
+        `${pc.dim('• Active days:')} ${summary.activeDays}/${summary.totalDays} ${pc.dim('(≥1 prayer)')}`,
+      );
+      renderLine(
+        `${pc.dim('• Perfect days:')} ${summary.perfectDays}/${summary.totalDays} ${pc.dim('(5/5)')}`,
+      );
+      const perfectPercent =
+        summary.totalDays > 0 ? Math.round((summary.perfectDays / summary.totalDays) * 100) : 0;
+      renderLine(
+        `${pc.dim('• Win rate:')} ${accent(`${perfectPercent}%`)} ${pc.dim(`(${summary.perfectDays} perfect days)`)}`,
+      );
       renderLine();
 
       renderLine(accent(chart.label));

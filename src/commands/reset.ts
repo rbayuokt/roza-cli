@@ -26,6 +26,21 @@ export const registerResetCommand = (program: Command): void => {
         return;
       }
 
+      const finalConfirm = await confirm({
+        message: 'This will permanently delete your data. Continue?',
+        initialValue: false,
+      });
+
+      if (isCancel(finalConfirm)) {
+        cancel('Reset cancelled.');
+        return;
+      }
+
+      if (!finalConfirm) {
+        outro(pc.dim('No changes made.'));
+        return;
+      }
+
       clearConfig();
       outro('Configuration cleared. Run any command to set up again.');
     });

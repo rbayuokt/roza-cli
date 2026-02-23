@@ -3,11 +3,15 @@ import type { Command } from 'commander';
 import { spawnSync } from 'node:child_process';
 import ora from 'ora';
 import pc from 'picocolors';
+import { erase } from 'sisteransi';
 
 import quotesJson from '../data/quran-quotes.json' with { type: 'json' };
 import {
   fetchCalendarByAddress,
   fetchCalendarByCity,
+  fetchHijriByDate,
+  fetchHijriCalendarByAddress,
+  fetchHijriCalendarByCity,
   fetchTimingsByAddress,
   fetchTimingsByCity,
   type PrayerData,
@@ -23,6 +27,8 @@ type ScheduleOptions = {
   school?: string;
   date?: string;
   month?: string;
+  ramadan?: boolean;
+  ramadanYear?: string;
   save?: boolean;
 };
 
@@ -89,6 +95,31 @@ const parseOptionalNumber = (value?: string): number | undefined => {
     throw new Error('Value must be an integer');
   }
   return parsed;
+};
+
+const parseHijriYear = (value: string): number => {
+  const year = Number(value);
+  if (!Number.isInteger(year) || year < 1) {
+    throw new Error('Hijri year must be a positive integer');
+  }
+  return year;
+};
+
+const getTodayDateKey = (): string => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const toDateKeyFromGregorian = (dateValue: string): string => {
+  const match = /^(\d{2})-(\d{2})-(\d{4})$/.exec(dateValue);
+  if (!match) {
+    return dateValue;
+  }
+  const [, day, month, year] = match;
+  return `${year}-${month}-${day}`;
 };
 
 const extractTime = (value: string): string => value.split(' ')[0] ?? value;
@@ -235,6 +266,14 @@ const centerAnsi = (value: string, width: number): string => {
   return `${' '.repeat(left)}${value}${' '.repeat(right)}`;
 };
 
+const padAnsi = (value: string, width: number): string => {
+  const visible = stripAnsi(value).length;
+  if (visible >= width) {
+    return value;
+  }
+  return value + ' '.repeat(width - visible);
+};
+
 const padBetween = (left: string, right: string, width: number): string => {
   const leftLen = stripAnsi(left).length;
   const rightLen = stripAnsi(right).length;
@@ -254,39 +293,133 @@ const renderLine = (text = ''): void => {
   console.log(`${LEFT_PAD}${text}`);
 };
 
+const SCHEDULE_ART = [
+  '███████╗ ██████╗██╗  ██╗███████╗██████╗ ██╗   ██╗██╗     ███████╗',
+  '██╔════╝██╔════╝██║  ██║██╔════╝██╔══██╗██║   ██║██║     ██╔════╝',
+  '███████╗██║     ███████║█████╗  ██║  ██║██║   ██║██║     █████╗  ',
+  '╚════██║██║     ██╔══██║██╔══╝  ██║  ██║██║   ██║██║     ██╔══╝  ',
+  '███████║╚██████╗██║  ██║███████╗██████╔╝╚██████╔╝███████╗███████╗',
+  '╚══════╝ ╚═════╝╚═╝  ╚═╝╚══════╝╚═════╝  ╚═════╝ ╚══════╝╚══════╝',
+];
+
+const renderScheduleHeader = (subtitle?: string): void => {
+  renderLine();
+  SCHEDULE_ART.forEach((line) => renderLine(accent(line)));
+  if (subtitle) {
+    renderLine();
+    renderLine(pc.dim(subtitle));
+    renderLine();
+  }
+};
+
 const shouldShowMenu = (): boolean => process.env.ROZA_INTERACTIVE === '1';
 
 const clearScreen = (): void => {
   process.stdout.write('\u001b[2J\u001b[H\u001b[3J');
 };
 
+const clearLastLines = (lines: number): void => {
+  if (lines <= 0) return;
+  process.stdout.write(erase.lines(lines));
+};
+
+const getMenuLineCount = (message: string, optionCount: number): number => {
+  const messageLines = message.split('\n').length;
+  return messageLines + optionCount + 1;
+};
+
 const runInteractiveMenu = async (): Promise<void> => {
   if (!shouldShowMenu()) return;
 
   while (true) {
+    const mainMessage = 'Choose your next action';
+    const mainOptions = [
+      { value: 'schedule', label: 'Home' },
+      { value: 'log', label: 'Log prayers' },
+      { value: 'ramadan', label: 'Ramadan menu' },
+      { value: 'settings', label: 'Settings' },
+      { value: 'exit', label: 'Exit' },
+    ] as const;
     const action = await select({
-      message: 'Choose your next action',
-      options: [
-        { value: 'schedule', label: 'Home' },
-        { value: 'mark', label: 'Log today’s prayers' },
-        { value: 'backfill', label: 'Backfill past date' },
-        { value: 'history-ramadan', label: 'View Ramadan history' },
-        { value: 'recap-ramadan', label: 'Ramadan statistics' },
-        { value: 'reset', label: 'Reset setup' },
-        { value: 'exit', label: 'Exit' },
-      ],
+      message: mainMessage,
+      options: [...mainOptions],
     });
 
     if (isCancel(action) || action === 'exit') {
       return;
     }
 
-    const argv =
-      action === 'history-ramadan'
-        ? [process.argv[1], 'history', '--ramadan']
-        : action === 'recap-ramadan'
-          ? [process.argv[1], 'recap', '--ramadan']
-          : [process.argv[1], String(action)];
+    clearLastLines(getMenuLineCount(mainMessage, mainOptions.length));
+
+    let argv: string[];
+    if (action === 'log') {
+      const logMessage = 'Log prayers';
+      const logOptions = [
+        { value: 'mark', label: 'Log today’s prayers' },
+        { value: 'backfill', label: 'Backfill past date' },
+        { value: 'back', label: 'Back' },
+      ] as const;
+      const logAction = await select({
+        message: logMessage,
+        options: [...logOptions],
+      });
+
+      clearLastLines(getMenuLineCount(logMessage, logOptions.length));
+
+      if (isCancel(logAction) || logAction === 'back') {
+        continue;
+      }
+
+      argv = [process.argv[1], String(logAction)];
+    } else if (action === 'ramadan') {
+      const ramadanMessage = 'Ramadan menu';
+      const ramadanOptions = [
+        { value: 'schedule-ramadan', label: 'View Ramadan schedule' },
+        { value: 'history-ramadan', label: 'View Ramadan history' },
+        { value: 'recap-ramadan', label: 'Ramadan statistics' },
+        { value: 'back', label: 'Back' },
+      ] as const;
+      const ramadanAction = await select({
+        message: ramadanMessage,
+        options: [...ramadanOptions],
+      });
+
+      clearLastLines(getMenuLineCount(ramadanMessage, ramadanOptions.length));
+
+      if (isCancel(ramadanAction) || ramadanAction === 'back') {
+        continue;
+      }
+
+      argv =
+        ramadanAction === 'schedule-ramadan'
+          ? [process.argv[1], 'schedule', '--ramadan']
+          : ramadanAction === 'history-ramadan'
+            ? [process.argv[1], 'history', '--ramadan']
+            : [process.argv[1], 'recap', '--ramadan'];
+    } else if (action === 'settings') {
+      const settingsMessage = 'Settings';
+      const settingsOptions = [
+        { value: 'export', label: 'Export data' },
+        { value: 'import', label: 'Import data' },
+        { value: 'reset', label: 'Reset setup' },
+        { value: 'about', label: 'About' },
+        { value: 'back', label: 'Back' },
+      ] as const;
+      const settingsAction = await select({
+        message: settingsMessage,
+        options: [...settingsOptions],
+      });
+
+      clearLastLines(getMenuLineCount(settingsMessage, settingsOptions.length));
+
+      if (isCancel(settingsAction) || settingsAction === 'back') {
+        continue;
+      }
+
+      argv = [process.argv[1], String(settingsAction)];
+    } else {
+      argv = [process.argv[1], String(action)];
+    }
 
     clearScreen();
 
@@ -406,6 +539,65 @@ const renderMonthlySchedule = (items: ReadonlyArray<PrayerData>): void => {
     console.log(
       `${pc.cyan(label)}  Fajr ${t.Fajr}  Dhuhr ${t.Dhuhr}  Asr ${t.Asr}  Maghrib ${t.Maghrib}  Isha ${t.Isha}`,
     );
+  }
+};
+
+const renderRamadanSchedule = (
+  items: ReadonlyArray<PrayerData>,
+  hijriYear: number,
+): void => {
+  if (items.length === 0) {
+    console.log(pc.yellow('No schedule data found for Ramadan.'));
+    return;
+  }
+
+  const headers = ['#', 'Date', 'Hijri', 'Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+  const todayKey = getTodayDateKey();
+  const rows = items.map((item, index) => {
+    const hijriLabel = `${item.date.hijri.day} ${item.date.hijri.month.en}`;
+    const gregorianLabel = item.date.readable;
+    const t = item.timings;
+    const dateKey = toDateKeyFromGregorian(item.date.gregorian.date);
+    return {
+      isToday: dateKey === todayKey,
+      values: [
+        String(index + 1),
+        gregorianLabel,
+        hijriLabel,
+        extractTime(t.Fajr),
+        extractTime(t.Dhuhr),
+        extractTime(t.Asr),
+        extractTime(t.Maghrib),
+        extractTime(t.Isha),
+      ],
+    };
+  });
+
+  const colWidths = headers.map((header, idx) =>
+    Math.max(header.length, ...rows.map((row) => row.values[idx]?.length ?? 0)),
+  );
+  const gap = '  ';
+  const headerLine = headers
+    .map((header, idx) => (idx < 3 ? padAnsi(pc.dim(header), colWidths[idx]) : centerAnsi(pc.dim(header), colWidths[idx])))
+    .join(gap);
+  const tableWidth = stripAnsi(headerLine).length;
+
+  renderScheduleHeader();
+  renderLine(padBetween(`🌙 Ramadan ${hijriYear}`, `🕒 Timezone: ${items[0].meta.timezone}`, tableWidth));
+  renderLine();
+  renderLine();
+
+  renderLine(headerLine);
+  renderLine(pc.dim('─'.repeat(tableWidth)));
+
+  for (const row of rows) {
+    const line = row.values
+      .map((value, idx) => {
+        const styled = row.isToday ? accent(value) : value;
+        return idx < 3 ? padAnsi(styled, colWidths[idx]) : centerAnsi(styled, colWidths[idx]);
+      })
+      .join(gap);
+    renderLine(line);
   }
 };
 
@@ -529,9 +721,21 @@ export const registerScheduleCommand = (program: Command): void => {
     .option('--address <address>', 'Full address for prayer times')
     .option('--method <id>', 'Calculation method id')
     .option('--school <id>', 'School id (0 = Shafi, 1 = Hanafi)')
+    .option('--ramadan', 'Show Ramadan schedule (Hijri month 9)')
+    .option('--ramadan-year <year>', 'Hijri year for Ramadan (e.g. 1447)')
     .option('--no-save', 'Do not persist location/method')
     .action(async (options: ScheduleOptions) => {
       try {
+        if (options.ramadan && options.month) {
+          throw new Error('Use either --ramadan or --month, not both.');
+        }
+        if (options.ramadan && options.date) {
+          throw new Error('Use either --ramadan or --date, not both.');
+        }
+        if (options.ramadanYear && (options.month || options.date)) {
+          throw new Error('Use --ramadan-year only with --ramadan.');
+        }
+
         const location = await resolveLocation(options);
         const existing = getConfig();
         const method = parseOptionalNumber(options.method) ?? existing.method;
@@ -539,7 +743,31 @@ export const registerScheduleCommand = (program: Command): void => {
 
         const spinner = ora('Fetching schedule...').start();
 
-        if (options.month) {
+        if (options.ramadan || options.ramadanYear) {
+          const hijriYear = options.ramadanYear
+            ? parseHijriYear(options.ramadanYear)
+            : Number((await fetchHijriByDate(getTodayDateKey())).hijri.year);
+          const data =
+            location.type === 'city'
+              ? await fetchHijriCalendarByCity({
+                  city: location.city,
+                  country: location.country,
+                  year: hijriYear,
+                  month: 9,
+                  method,
+                  school,
+                })
+              : await fetchHijriCalendarByAddress({
+                  address: location.address,
+                  year: hijriYear,
+                  month: 9,
+                  method,
+                  school,
+                });
+
+          spinner.stop();
+          renderRamadanSchedule(data, hijriYear);
+        } else if (options.month) {
           const { year, month } = parseMonthInput(options.month);
           const data =
             location.type === 'city'
