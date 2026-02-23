@@ -1,7 +1,8 @@
-import { cancel, intro, isCancel, multiselect, outro, text } from '@clack/prompts';
+import { cancel, confirm, intro, isCancel, multiselect, outro, text } from '@clack/prompts';
 import type { Command } from 'commander';
 import pc from 'picocolors';
 
+import { fetchHijriByDate } from '../lib/api.js';
 import { getAttendance, PRAYERS, setAttendance, type PrayerName } from '../lib/store.js';
 
 type BackfillOptions = {
@@ -37,13 +38,22 @@ const isFutureDate = (dateKey: string): boolean => {
   return dateKey > todayKey;
 };
 
+const isRamadanDate = async (dateKey: string): Promise<boolean> => {
+  try {
+    const converted = await fetchHijriByDate(dateKey);
+    return converted.hijri.month.number === 9;
+  } catch {
+    return false;
+  }
+};
+
 export const registerBackfillCommand = (program: Command): void => {
   program
     .command('backfill')
     .description('Fill in missed prayer attendance for a past date')
     .option('-d, --date <date>', 'Date in YYYY-MM-DD format')
     .action(async (options: BackfillOptions) => {
-      intro('📅 Backfill prayer log - Log prayers for a date in the past.');
+      intro('📅 Backfill log - Log prayers and fasting for a past date.');
 
       let dateKey: string;
       const promptForDate = async (): Promise<string | null> => {
@@ -123,7 +133,25 @@ export const registerBackfillCommand = (program: Command): void => {
         PRAYERS.map((prayer) => [prayer, selectedSet.has(prayer)]),
       ) as Record<PrayerName, boolean>;
 
-      setAttendance(dateKey, record);
+      let fasted: boolean | undefined = existing?.fasted;
+      if (await isRamadanDate(dateKey)) {
+        const fastingAnswer = await confirm({
+          message: `Did you complete your fast on ${dateKey}?`,
+          initialValue: existing?.fasted ?? false,
+        });
+
+        if (isCancel(fastingAnswer)) {
+          cancel('Backfill cancelled.');
+          return;
+        }
+
+        fasted = Boolean(fastingAnswer);
+        if (fasted) {
+          console.log(pc.green('MashaAllah'));
+        }
+      }
+
+      setAttendance(dateKey, record, fasted);
       outro(pc.dim('Saved.'));
     });
 };

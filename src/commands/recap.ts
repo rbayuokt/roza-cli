@@ -12,7 +12,6 @@ import {
   getConfig,
   listAttendance,
   type DayAttendance,
-  type PrayerRecord,
 } from '../lib/store.js';
 
 type RecapOptions = {
@@ -75,6 +74,14 @@ const parseHijriYear = (value: string): number => {
     throw new Error('Hijri year must be a positive integer');
   }
   return year;
+};
+
+const getTodayDateKey = (): string => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 const addDays = (dateKey: string, days: number): string => {
@@ -159,6 +166,45 @@ const buildPrayerGrid = (rows: ReadonlyArray<DayAttendance>): PrayerGrid => {
   return { label, rows: rowsOut };
 };
 
+const calcWinRateUntilYesterday = (
+  rows: ReadonlyArray<DayAttendance>,
+): { percent: number; perfectDays: number } => {
+  const todayKey = getTodayDateKey();
+  const scoped = rows.filter((row) => row.date < todayKey);
+  const totalDays = scoped.length;
+  const perfectDays = scoped.reduce((sum, row) => {
+    const isPerfect = PRAYERS.every((prayer) => row.prayers[prayer]);
+    return sum + (isPerfect ? 1 : 0);
+  }, 0);
+  const percent = totalDays > 0 ? Math.round((perfectDays / totalDays) * 100) : 0;
+  return { percent, perfectDays };
+};
+
+const calcPrayerRateUntilYesterday = (
+  rows: ReadonlyArray<DayAttendance>,
+): { percent: number; completed: number; total: number } => {
+  const todayKey = getTodayDateKey();
+  const scoped = rows.filter((row) => row.date < todayKey);
+  const completed = scoped.reduce((sum, row) => {
+    const isPerfect = PRAYERS.every((prayer) => row.prayers[prayer]);
+    return sum + (isPerfect ? 1 : 0);
+  }, 0);
+  const total = scoped.length;
+  const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+  return { percent, completed, total };
+};
+
+const calcFastingRateUntilYesterday = (
+  rows: ReadonlyArray<DayAttendance>,
+): { percent: number; completed: number; total: number } => {
+  const todayKey = getTodayDateKey();
+  const scoped = rows.filter((row) => row.date < todayKey);
+  const completed = scoped.reduce((sum, row) => sum + (row.fasted ? 1 : 0), 0);
+  const total = scoped.length;
+  const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+  return { percent, completed, total };
+};
+
 const resolveRamadanCalendar = async (
   location: NonNullable<ReturnType<typeof getConfig>['location']>,
   year: number,
@@ -194,14 +240,6 @@ const buildRamadanDatesFromCalendar = (
 
 const buildRamadanDatesFromStart = (start: string, days: number): ReadonlyArray<RamadanDate> =>
   Array.from({ length: days }, (_, idx) => ({ dateKey: addDays(start, idx) }));
-
-const buildPrayerMap = (rows: ReadonlyArray<DayAttendance>): Map<string, PrayerRecord> => {
-  const map = new Map<string, PrayerRecord>();
-  for (const row of rows) {
-    map.set(row.date, row.prayers);
-  }
-  return map;
-};
 
 const RECAP_ART = [
   '██████╗ ███████╗ ██████╗ █████╗ ██████╗ ',
@@ -255,13 +293,17 @@ export const registerRecapCommand = (program: Command): void => {
             );
 
         const attendance = listAttendance();
-        const prayerMap = buildPrayerMap(attendance);
+        const attendanceMap = new Map(attendance.map((row) => [row.date, row]));
 
-        const rows: DayAttendance[] = ramadanDates.map((date) => ({
-          date: date.dateKey,
-          prayers: prayerMap.get(date.dateKey) ?? {},
-          updatedAt: '',
-        }));
+        const rows: DayAttendance[] = ramadanDates.map((date) => {
+          const existing = attendanceMap.get(date.dateKey);
+          return {
+            date: date.dateKey,
+            prayers: existing?.prayers ?? {},
+            fasted: existing?.fasted,
+            updatedAt: existing?.updatedAt ?? '',
+          };
+        });
 
         if (rows.length === 0) {
           renderLine(pc.dim('No Ramadan records yet.'));
@@ -272,7 +314,6 @@ export const registerRecapCommand = (program: Command): void => {
         const chart = buildPrayerGrid(rows);
 
         renderRecapHeader();
-        renderLine(`${pc.dim('• Ramadan consistency')}`);
         renderLine(
           `${pc.dim('• Period:')} 1 Ramadan ${ramadanYear} → ${rows.length} Ramadan ${ramadanYear}`,
         );
@@ -280,15 +321,19 @@ export const registerRecapCommand = (program: Command): void => {
           `${pc.dim('• Prayers completed:')} ${summary.completed}/${summary.total} (${summary.percent}%)`,
         );
         renderLine(
-          `${pc.dim('• Active days:')} ${summary.activeDays}/${summary.totalDays} ${pc.dim('(≥1 prayer)')}`,
+          `${pc.dim('• Prayer perfect days:')} ${summary.perfectDays}/${summary.totalDays} ${pc.dim('(all 5 prayers)')}`,
         );
+        const fastedCount = rows.reduce((sum, row) => sum + (row.fasted ? 1 : 0), 0);
+        renderLine(`${pc.dim('• Fasting days:')} ${fastedCount}/${rows.length}`);
+        const prayerRate = calcPrayerRateUntilYesterday(rows);
+        const prayerCrown = prayerRate.percent === 100 ? ' 👑' : '';
         renderLine(
-          `${pc.dim('• Perfect days:')} ${summary.perfectDays}/${summary.totalDays} ${pc.dim('(5/5)')}`,
+          `${pc.dim('• Prayer win rate:')} ${accent(`${prayerRate.percent}%`)}${prayerCrown} ${pc.dim(`(${prayerRate.completed}/${prayerRate.total} perfect days)`)}`,
         );
-        const perfectPercent =
-          summary.totalDays > 0 ? Math.round((summary.perfectDays / summary.totalDays) * 100) : 0;
+        const fastingRate = calcFastingRateUntilYesterday(rows);
+        const fastingCrown = fastingRate.percent === 100 ? ' 👑' : '';
         renderLine(
-          `${pc.dim('• Win rate:')} ${accent(`${perfectPercent}%`)} ${pc.dim(`(${summary.perfectDays} perfect days)`)}`,
+          `${pc.dim('• Fasting win rate:')} ${accent(`${fastingRate.percent}%`)}${fastingCrown} ${pc.dim(`(${fastingRate.completed}/${fastingRate.total} days)`)}`,
         );
         renderLine();
 
@@ -319,15 +364,11 @@ export const registerRecapCommand = (program: Command): void => {
         `${pc.dim('• Prayers completed:')} ${summary.completed}/${summary.total} (${summary.percent}%)`,
       );
       renderLine(
-        `${pc.dim('• Active days:')} ${summary.activeDays}/${summary.totalDays} ${pc.dim('(≥1 prayer)')}`,
+        `${pc.dim('• Prayer perfect days:')} ${summary.perfectDays}/${summary.totalDays} ${pc.dim('(all 5 prayers)')}`,
       );
+      const winRate = calcWinRateUntilYesterday(rows);
       renderLine(
-        `${pc.dim('• Perfect days:')} ${summary.perfectDays}/${summary.totalDays} ${pc.dim('(5/5)')}`,
-      );
-      const perfectPercent =
-        summary.totalDays > 0 ? Math.round((summary.perfectDays / summary.totalDays) * 100) : 0;
-      renderLine(
-        `${pc.dim('• Win rate:')} ${accent(`${perfectPercent}%`)} ${pc.dim(`(${summary.perfectDays} perfect days)`)}`,
+        `${pc.dim('• Win rate:')} ${accent(`${winRate.percent}%`)} ${pc.dim(`(${winRate.perfectDays} perfect days)`)}`,
       );
       renderLine();
 

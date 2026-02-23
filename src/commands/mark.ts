@@ -1,7 +1,8 @@
-import { cancel, intro, isCancel, multiselect, outro } from '@clack/prompts';
+import { cancel, confirm, intro, isCancel, multiselect, outro } from '@clack/prompts';
 import type { Command } from 'commander';
 import pc from 'picocolors';
 
+import { fetchHijriByDate } from '../lib/api.js';
 import { getConfig, getAttendance, PRAYERS, setAttendance, type PrayerName } from '../lib/store.js';
 
 const formatDateKey = (date: Date, timezone?: string): string => {
@@ -29,6 +30,15 @@ const formatDateKey = (date: Date, timezone?: string): string => {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+};
+
+const isRamadanDate = async (dateKey: string): Promise<boolean> => {
+  try {
+    const converted = await fetchHijriByDate(dateKey);
+    return converted.hijri.month.number === 9;
+  } catch {
+    return false;
+  }
 };
 
 export const registerMarkCommand = (program: Command): void => {
@@ -60,7 +70,25 @@ export const registerMarkCommand = (program: Command): void => {
         PRAYERS.map((prayer) => [prayer, selectedSet.has(prayer)]),
       ) as Record<PrayerName, boolean>;
 
-      setAttendance(dateKey, record);
+      let fasted: boolean | undefined = existing?.fasted;
+      if (await isRamadanDate(dateKey)) {
+        const fastingAnswer = await confirm({
+          message: 'Did you complete your fast today?',
+          initialValue: existing?.fasted ?? false,
+        });
+
+        if (isCancel(fastingAnswer)) {
+          cancel('Marking cancelled.');
+          return;
+        }
+
+        fasted = Boolean(fastingAnswer);
+        if (fasted) {
+          console.log(pc.green('MashaAllah'));
+        }
+      }
+
+      setAttendance(dateKey, record, fasted);
       outro(pc.dim('Saved.'));
     });
 };

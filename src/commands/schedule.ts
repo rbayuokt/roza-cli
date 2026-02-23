@@ -335,7 +335,7 @@ const runInteractiveMenu = async (): Promise<void> => {
     const mainMessage = 'Choose your next action';
     const mainOptions = [
       { value: 'schedule', label: 'Home' },
-      { value: 'log', label: 'Log prayers' },
+      { value: 'log', label: 'Log prayers & fasting' },
       { value: 'ramadan', label: 'Ramadan menu' },
       { value: 'settings', label: 'Settings' },
       { value: 'exit', label: 'Exit' },
@@ -353,9 +353,10 @@ const runInteractiveMenu = async (): Promise<void> => {
 
     let argv: string[];
     if (action === 'log') {
-      const logMessage = 'Log prayers';
+      const logMessage = 'Log prayers & fasting';
       const logOptions = [
         { value: 'mark', label: 'Log today’s prayers' },
+        { value: 'fast', label: 'Log today’s fast' },
         { value: 'backfill', label: 'Backfill past date' },
         { value: 'back', label: 'Back' },
       ] as const;
