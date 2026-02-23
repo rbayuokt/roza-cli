@@ -5,6 +5,7 @@ import pc from 'picocolors';
 import { registerAboutCommand } from './commands/about.js';
 import { registerBackfillCommand } from './commands/backfill.js';
 import { registerExportCommand } from './commands/export.js';
+import { registerFastCommand } from './commands/fast.js';
 import { registerHistoryCommand } from './commands/history.js';
 import { registerImportCommand } from './commands/import.js';
 import { registerMarkCommand } from './commands/mark.js';
@@ -22,6 +23,7 @@ program
 
 registerScheduleCommand(program);
 registerMarkCommand(program);
+registerFastCommand(program);
 registerBackfillCommand(program);
 registerHistoryCommand(program);
 registerRecapCommand(program);

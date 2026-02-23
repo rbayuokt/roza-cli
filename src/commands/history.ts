@@ -270,9 +270,11 @@ export const registerHistoryCommand = (program: Command): void => {
 
         if (useRamadan && ramadanDates) {
           const prayerMap = getPrayerMap(attendance);
+          const attendanceMap = new Map(attendance.map((row) => [row.date, row]));
           const rowsForTable = ramadanDates.map((date) => ({
             date,
             prayers: prayerMap.get(date.dateKey) ?? {},
+            fasted: attendanceMap.get(date.dateKey)?.fasted,
           }));
 
           const totalDays = rowsForTable.length;
@@ -295,7 +297,7 @@ export const registerHistoryCommand = (program: Command): void => {
           );
           renderLine();
 
-          const headers = ['Date', 'Hijri', ...PRAYERS];
+          const headers = ['Date', 'Hijri', 'Fast', ...PRAYERS];
           const colWidths = headers.map((header, idx) => {
             if (idx === 0) {
               return Math.max(header.length, ...rowsForTable.map((row) => row.date.gregorianLabel.length));
@@ -324,6 +326,7 @@ export const registerHistoryCommand = (program: Command): void => {
             const values = [
               row.date.gregorianLabel,
               row.date.hijriLabel,
+              row.fasted ? accent('✓') : pc.dim('·'),
               ...PRAYERS.map((prayer) => (row.prayers[prayer] ? accent('✓') : pc.dim('·'))),
             ];
             const formatted = values

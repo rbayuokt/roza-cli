@@ -38,6 +38,7 @@ const PrayerRecordSchema = z.object({
 const DayAttendanceSchema = z.object({
   date: z.string(),
   prayers: PrayerRecordSchema,
+  fasted: z.boolean().optional(),
   updatedAt: z.string(),
 });
 
@@ -105,7 +106,11 @@ export const listAttendance = (): ReadonlyArray<DayAttendance> => {
   return entries.sort((a, b) => a.date.localeCompare(b.date));
 };
 
-export const setAttendance = (dateKey: string, prayers: PrayerRecord): DayAttendance => {
+export const setAttendance = (
+  dateKey: string,
+  prayers: PrayerRecord,
+  fasted?: boolean,
+): DayAttendance => {
   const state = readState();
   const existing = state.attendance?.[dateKey];
   const nextRecord: DayAttendance = {
@@ -114,6 +119,7 @@ export const setAttendance = (dateKey: string, prayers: PrayerRecord): DayAttend
       ...existing?.prayers,
       ...prayers,
     },
+    fasted: fasted === undefined ? existing?.fasted : fasted,
     updatedAt: new Date().toISOString(),
   };
 
