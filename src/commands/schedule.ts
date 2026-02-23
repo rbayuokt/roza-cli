@@ -337,7 +337,7 @@ const runInteractiveMenu = async (): Promise<void> => {
       { value: 'schedule', label: 'Home' },
       { value: 'log', label: 'Log prayers' },
       { value: 'ramadan', label: 'Ramadan menu' },
-      { value: 'reset', label: 'Reset setup' },
+      { value: 'settings', label: 'Settings' },
       { value: 'exit', label: 'Exit' },
     ] as const;
     const action = await select({
@@ -396,6 +396,27 @@ const runInteractiveMenu = async (): Promise<void> => {
           : ramadanAction === 'history-ramadan'
             ? [process.argv[1], 'history', '--ramadan']
             : [process.argv[1], 'recap', '--ramadan'];
+    } else if (action === 'settings') {
+      const settingsMessage = 'Settings';
+      const settingsOptions = [
+        { value: 'export', label: 'Export data' },
+        { value: 'import', label: 'Import data' },
+        { value: 'reset', label: 'Reset setup' },
+        { value: 'about', label: 'About' },
+        { value: 'back', label: 'Back' },
+      ] as const;
+      const settingsAction = await select({
+        message: settingsMessage,
+        options: [...settingsOptions],
+      });
+
+      clearLastLines(getMenuLineCount(settingsMessage, settingsOptions.length));
+
+      if (isCancel(settingsAction) || settingsAction === 'back') {
+        continue;
+      }
+
+      argv = [process.argv[1], String(settingsAction)];
     } else {
       argv = [process.argv[1], String(action)];
     }

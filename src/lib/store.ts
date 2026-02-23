@@ -62,6 +62,16 @@ const readState = (): StoreState => {
   return {};
 };
 
+export const exportStore = (): StoreState => readState();
+
+export const importStore = (next: StoreState): void => {
+  const parsed = StoreSchema.safeParse(next);
+  if (!parsed.success) {
+    throw new Error('Invalid import data.');
+  }
+  store.store = parsed.data;
+};
+
 export const getConfig = (): UserConfig => {
   const state = readState();
   const { location, method, school, timezone } = state;

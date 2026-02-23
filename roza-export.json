@@ -1,0 +1,10 @@
+{
+  "location": {
+    "type": "city",
+    "city": "Bandung",
+    "country": "Indonesia"
+  },
+  "method": 20,
+  "school": 0,
+  "timezone": "Asia/Jakarta"
+}
